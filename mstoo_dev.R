@@ -3,7 +3,7 @@
 
 # Some basic functions and playground for R-based ms2 methods development
 
-### some required libraries ###
+#### some required libraries ####
 
 library(xcms)
 library(CAMERA)
@@ -11,7 +11,7 @@ library(LOBSTAHS)
 
 library(repmis) # for sourcing files from web ("repmis" is awesome)
 
-### initial (crude?) functions for evaluation of fragmentation spectra ###
+#### initial (crude?) functions for evaluation of fragmentation spectra ####
 
 # necessary functions that will allow us to extract the correct ms2 spectra, evaluate transitions, etc
 
@@ -107,23 +107,68 @@ sumfrag = function(x) {
   
 }
 
-### an implementation of the above, from work on some cultures ###
+#### an implementation of the above, from work on some cultures ####
 
-# load in necessary data objects
+# requires several files: (1) annotated xcmsSet object for data in positive ion mode, (2) LOBSet object in positive ion mode, and (3) list containing positive-mode xcmsRaw objects for all samples generated using: 
+#             xraw <- xcmsRaw("yourfile.mzXML", includeMSn=TRUE)
+# the routine below assumes the objects are stored in the list in the order in which they appear in the xsAnnotate and LOBSet objecty
+# *** this last step in particular needs to be automated for all of this to work reproducibly and predictably
+
+#### prep workspace ####
+
+### load necessary data objects from other Github repo where they reside, using repmis ###
+
+# pre-generated LOBSet 
 
 source_data('https://raw.githubusercontent.com/jamesrco/LipidPhotoOxBox/master/data/nice/Orbi_MS_data/LOBSTAHS_processed/UNC_Marchetti_diatom_cultures_pos_withoddFA_LOBSet.RData')
-                       
-Marchetti_diatom_cultures_pos_withoddFA = getLOBpeaklist(Marchetti_diatom_cultures_pos_withoddFA) # generate peaklist
+Marchetti_diatoms_LOBset_pos = Marchetti_diatom_cultures_pos_withoddFA # rename so easier to work with
+Marchetti_diatoms_LOBset_posPeaks = getLOBpeaklist(Marchetti_diatoms_LOBset_pos) # generate peaklist
+
+# pull in the parent xsAnnotate objects & list containing the xcmsRaw objects
+
+source_data('https://raw.githubusercontent.com/jamesrco/LipidPhotoOxBox/master/data/nice/Orbi_MS_data/xsAnnotate_objects/UNC_Marchetti_diatom_cultures_pos_withoddFA_xsAnnotate.RData')
+Marchetti_diatoms_xsA_pos = UNC_Marchetti_diatom_cultures_pos_withoddFA_xsAnnotate # rename so easier to work with
+
+source_data('https://github.com/jamesrco/LipidPhotoOxBox/raw/master/data/raw/Orbi_MS_data/xcmsRaw_objects/UNC_Marchetti_diatom_cultures_pos_xcmsRaw.RData')
+Marchetti_xsR = UNC_Marchetti_diatom_cultures_pos_xcmsRaw
+
+### preallocate three matrices for our results ###
+
+# Marchetti_diatom.detected_pos_ion_fragSpec: to keep track of how many valid ms2 fragmentation spectra were detected for the feature in positive ion mode
+# Marchetti_diatom.fragdata_results: number of ms2 spectra in which the PI or CNL criteria were validated
+
+Marchetti_diatom.detected_pos_ion_fragments = as.data.frame(matrix(NA,nrow(Marchetti_diatoms_LOBset_posPeaks),ncol=7))
+Marchetti_diatom.fragdata_results = as.data.frame(matrix(NA,nrow(Marchetti_diatoms_LOBset_posPeaks),ncol=7))
+
+### some necessary definitions ###
+
+# first, define types and values of MS fragmentation experiments for each IP-DAG class
+# (i.e., constant neutral loss (CNL) or product ion (PI))
+
+# create empty data frame
+Marchetti_diatom.frag_lookup_classes = as.data.frame(matrix(NA,8,2))
+rownames(Marchetti_diatom.frag_lookup_classes) = 
+  c("PG","PE","PC","MGDG","SQDG","DGDG","DGCC","DGTS_DGTA")
+colnames(Marchetti_diatom.frag_lookup_classes) =
+  c("Frag_exp_type","mz_value")
+
+# now, populate our data frame with necessary values
+# per Popendorf et al., Lipids (2013) 48:185–195
+
+Marchetti_diatom.frag_lookup_classes[,1] =
+  c("CNL","CNL","PI","CNL","CNL","CNL","PI","PI")
+Marchetti_diatom.frag_lookup_classes[,2] =
+  c(189.040224,141.019094,184.073321,197.089937,261.051837,359.142212,104.106690,236.149249)
 
 # iterate through the IP-DAG IDs by sample, retrieve necessary data from the xsAnnotate and xcmsRaw objects, evaluate, and record the results
 
-for (i in 1:(nrow(Marchetti_diatom_cultures_pos_withoddFA))) {
+for (i in 1:(nrow(Marchetti_diatoms_LOBset_posPeaks))) {
   # iterate through each LOBSTAHS ID
   
   # retrieve LOBSTAHS compound ID, lipid species
   
-  this.ID = Marchetti_diatom_cultures_pos_withoddFA$compound_name[i]
-  this.IDclass = Marchetti_diatom_cultures_pos_withoddFA$species[i]
+  this.ID = Marchetti_diatoms_LOBset_posPeaks$compound_name[i]
+  this.IDclass = Marchetti_diatoms_LOBset_posPeaks$species[i]
   
   if (this.IDclass %in% rownames(Marchetti_diatom.frag_lookup_classes)) {
     # an escape if the lipid class isn't accounted for in our input parameter table
@@ -131,7 +176,7 @@ for (i in 1:(nrow(Marchetti_diatom_cultures_pos_withoddFA))) {
     # retrieve underlying positive-mode xcms group and peak data
     
     xcms.peakIDs_thisgroup_pos =
-      Marchetti_diatoms_xsA_pos@xcmsSet@groupidx[[Marchetti_diatom_cultures_pos_withoddFA$xcms_peakgroup[i]]]
+      Marchetti_diatoms_xsA_pos@xcmsSet@groupidx[[Marchetti_diatoms_LOBset_posPeaks$xcms_peakgroup[i]]]
     
     xcms.peakdata_thisgroup_pos =
       as.data.frame(Marchetti_diatoms_xsA_pos@xcmsSet@peaks[xcms.peakIDs_thisgroup_pos,])
